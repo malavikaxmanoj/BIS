@@ -1,0 +1,85 @@
+import numpy as np
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+
+# Dataset
+X, y = make_classification(n_samples=500, n_features=10, n_informative=8, n_classes=2)
+X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2)
+
+# NN structure
+input_size = X.shape[1]
+hidden_size = 5
+output_size = 1
+
+def sigmoid(x):
+    return 1 / (1 + np.exp(-x))
+
+def forward_pass(X, w1, w2):
+    hidden = sigmoid(np.dot(X, w1))
+    output = sigmoid(np.dot(hidden, w2))
+    return output
+
+def compute_fitness(weights):
+    preds = forward_pass(X_train, weights['w1'], weights['w2'])
+    preds = (preds > 0.5).astype(int)
+    return accuracy_score(y_train, preds)
+
+# GA params
+population_size = 20  # Must be >= 4 (for your 4 seeded)
+generations = 50
+mutation_rate = 0.1
+
+# Seeds for initial 4 individuals
+seeds = [12, 25, 5, 19]
+
+# Initialize population
+population = []
+for seed in seeds:
+    np.random.seed(seed)
+    population.append({
+        'w1': np.random.randn(input_size, hidden_size),
+        'w2': np.random.randn(hidden_size, output_size)
+    })
+
+# Fill rest randomly
+np.random.seed(None)
+for _ in range(population_size - len(seeds)):
+    population.append({
+        'w1': np.random.randn(input_size, hidden_size),
+        'w2': np.random.randn(hidden_size, output_size)
+    })
+
+# GA loop
+for gen in range(generations):
+    fitness_scores = np.array([compute_fitness(ind) for ind in population])
+    best_fitness = np.max(fitness_scores)
+    avg_fitness = np.mean(fitness_scores)
+
+    # Select top half
+    sorted_idx = np.argsort(fitness_scores)[::-1]
+    population = [population[i] for i in sorted_idx[:population_size//2]]
+
+    # Create new population with crossover + mutation
+    new_population = []
+    while len(new_population) < population_size:
+        parents = np.random.choice(population, 2, replace=False)
+        child = {
+            'w1': (parents[0]['w1'] + parents[1]['w1']) / 2,
+            'w2': (parents[0]['w2'] + parents[1]['w2']) / 2,
+        }
+        if np.random.rand() < mutation_rate:
+            child['w1'] += np.random.randn(*child['w1'].shape) * 0.1
+            child['w2'] += np.random.randn(*child['w2'].shape) * 0.1
+        new_population.append(child)
+
+    population = new_population
+    print(f"Generation {gen+1}, Best Fitness: {best_fitness:.4f}, Average Fitness: {avg_fitness:.4f}")
+
+# Final evaluation on validation set
+fitness_scores = np.array([compute_fitness(ind) for ind in population])
+best_individual = population[np.argmax(fitness_scores)]
+preds = forward_pass(X_val, best_individual['w1'], best_individual['w2'])
+preds = (preds > 0.5).astype(int)
+final_acc = accuracy_score(y_val, preds)
+print(f"Final Accuracy on Validation Set: {final_acc:.4f}")
