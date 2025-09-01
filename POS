@@ -1,0 +1,76 @@
+import random
+import math
+
+# Distance between cities
+def euclidean_distance(a, b):
+    return math.sqrt((a[0] - b[0])**2 + (a[1] - b[1])**2)
+
+# Total distance of a route
+def route_length(route, cities):
+    distance = 0
+    for i in range(len(route)):
+        city_a = cities[route[i]]
+        city_b = cities[route[(i + 1) % len(route)]]  # wrap around
+        distance += euclidean_distance(city_a, city_b)
+    return distance
+
+# Decode particle position into a route
+def decode_route(position):
+    return sorted(range(len(position)), key=lambda k: position[k])
+
+# Particle class
+class Particle:
+    def __init__(self, num_cities):
+        self.position = [random.random() for _ in range(num_cities)]
+        self.velocity = [random.uniform(-1, 1) for _ in range(num_cities)]
+        self.best_position = list(self.position)
+        self.best_value = float('inf')
+
+    def update(self, global_best_position, w=0.5, c1=1.5, c2=1.5):
+        for i in range(len(self.position)):
+            r1, r2 = random.random(), random.random()
+            cognitive = c1 * r1 * (self.best_position[i] - self.position[i])
+            social = c2 * r2 * (global_best_position[i] - self.position[i])
+            self.velocity[i] = w * self.velocity[i] + cognitive + social
+            self.position[i] += self.velocity[i]
+
+# PSO Algorithm
+def pso_tsp(cities, num_particles=30, max_iterations=100):
+    num_cities = len(cities)
+    swarm = [Particle(num_cities) for _ in range(num_particles)]
+
+    # Initialize global best
+    global_best_position = list(swarm[0].position)
+    global_best_value = float('inf')
+
+    for iteration in range(max_iterations):
+        for particle in swarm:
+            route = decode_route(particle.position)
+            value = route_length(route, cities)
+
+            if value < particle.best_value:
+                particle.best_value = value
+                particle.best_position = list(particle.position)
+
+            if value < global_best_value:
+                global_best_value = value
+                global_best_position = list(particle.position)
+
+        for particle in swarm:
+            particle.update(global_best_position)
+
+        print(f"Iteration {iteration+1}/{max_iterations} | Best Distance: {global_best_value:.4f}")
+
+    best_route = decode_route(global_best_position)
+    return best_route, global_best_value
+
+# Example: 6 cities (x, y coordinates)
+cities = [
+    (0, 0), (1, 5), (5, 2),
+    (6, 6), (8, 3), (2, 7)
+]
+
+best_route, best_distance = pso_tsp(cities)
+
+print("\nFinal Best Route (city indices):", best_route)
+print("Best Distance:", round(best_distance, 4))
