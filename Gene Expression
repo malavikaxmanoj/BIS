@@ -1,0 +1,121 @@
+import random
+import math
+import operator
+
+# Define available operators and terminals (variables/constants)
+OPERATORS = {
+    '+': operator.add,
+    '-': operator.sub,
+    '*': operator.mul,
+    '/': lambda x, y: x / y if y != 0 else 1  # Safe division
+}
+TERMINALS = ['x', 1.0, 2.0, 3.0, 5.0, 7.0]
+
+MAX_DEPTH = 4
+
+# Generate a random expression tree (chromosome)
+def generate_expr(depth=0):
+    if depth >= MAX_DEPTH or (depth > 0 and random.random() < 0.3):
+        return random.choice(TERMINALS)
+    else:
+        op = random.choice(list(OPERATORS.keys()))
+        left = generate_expr(depth + 1)
+        right = generate_expr(depth + 1)
+        return (op, left, right)
+
+# Evaluate expression tree for a given x
+def eval_expr(expr, x):
+    if isinstance(expr, tuple):
+        op, left, right = expr
+        return OPERATORS[op](eval_expr(left, x), eval_expr(right, x))
+    elif expr == 'x':
+        return x
+    else:
+        return expr
+
+# Fitness function: example maximize f(x) = sin(x) * x over x in [0,10]
+def fitness(expr):
+    samples = [i * 0.5 for i in range(21)]  # 0 to 10, step 0.5
+    values = []
+    for val in samples:
+        try:
+            v = eval_expr(expr, val)
+            if math.isfinite(v):
+                values.append(v)
+            else:
+                values.append(-float('inf'))
+        except Exception:
+            values.append(-float('inf'))
+    return sum(values)  # Higher is better
+
+# Mutation: randomly change part of expression
+def mutate(expr, prob=0.1):
+    if random.random() < prob:
+        return generate_expr()
+    elif isinstance(expr, tuple):
+        op, left, right = expr
+        return (op, mutate(left, prob), mutate(right, prob))
+    else:
+        return expr
+
+# Crossover: swap subtrees between two parents
+def crossover(expr1, expr2, prob=0.7):
+    if random.random() > prob:
+        return expr1
+    if not isinstance(expr1, tuple) or not isinstance(expr2, tuple):
+        return expr2
+    else:
+        op1, left1, right1 = expr1
+        op2, left2, right2 = expr2
+        if random.random() < 0.5:
+            return (op1, crossover(left1, left2, prob), right1)
+        else:
+            return (op1, left1, crossover(right1, right2, prob))
+
+# Convert expression to string
+def expr_to_str(expr):
+    if isinstance(expr, tuple):
+        op, left, right = expr
+        return f"({expr_to_str(left)} {op} {expr_to_str(right)})"
+    else:
+        return str(expr)
+
+# Gene Expression Algorithm
+def GeneExpressionAlgorithm(pop_size=50, generations=30, crossover_rate=0.7, mutation_rate=0.2):
+    population = [generate_expr() for _ in range(pop_size)]
+
+    best_expr = None
+    best_fit = -float('inf')
+
+    for gen in range(generations):
+        fitnesses = [fitness(ind) for ind in population]
+
+        # Track best
+        for ind_fit, ind in zip(fitnesses, population):
+            if ind_fit > best_fit:
+                best_fit = ind_fit
+                best_expr = ind
+
+        new_population = []
+        while len(new_population) < pop_size:
+            # Tournament selection
+            def tournament_select():
+                a, b = random.sample(population, 2)
+                return a if fitness(a) > fitness(b) else b
+
+            parent1 = tournament_select()
+            parent2 = tournament_select()
+
+            child = crossover(parent1, parent2, crossover_rate)
+            child = mutate(child, mutation_rate)
+            new_population.append(child)
+
+        population = new_population
+        print(f"Generation {gen+1}: Best fitness = {best_fit}")
+
+    print("\nBest expression found:", expr_to_str(best_expr))
+    print("Best fitness:", best_fit)
+
+# Run algorithm
+if __name__ == "__main__":
+    GeneExpressionAlgorithm()
