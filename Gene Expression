@@ -1,19 +1,24 @@
 import random
 import math
 import operator
+import numpy as np
 
-# Define available operators and terminals (variables/constants)
+# --------------------------
+# Operators and Terminals
+# --------------------------
 OPERATORS = {
     '+': operator.add,
     '-': operator.sub,
     '*': operator.mul,
-    '/': lambda x, y: x / y if y != 0 else 1  # Safe division
+    '/': lambda x, y: x / y if y != 0 else 1  # safe division
 }
 TERMINALS = ['x', 1.0, 2.0, 3.0, 5.0, 7.0]
 
 MAX_DEPTH = 4
 
-# Generate a random expression tree (chromosome)
+# --------------------------
+# Expression Tree Functions
+# --------------------------
 def generate_expr(depth=0):
     if depth >= MAX_DEPTH or (depth > 0 and random.random() < 0.3):
         return random.choice(TERMINALS)
@@ -23,7 +28,6 @@ def generate_expr(depth=0):
         right = generate_expr(depth + 1)
         return (op, left, right)
 
-# Evaluate expression tree for a given x
 def eval_expr(expr, x):
     if isinstance(expr, tuple):
         op, left, right = expr
@@ -33,22 +37,38 @@ def eval_expr(expr, x):
     else:
         return expr
 
-# Fitness function: example maximize f(x) = sin(x) * x over x in [0,10]
-def fitness(expr):
-    samples = [i * 0.5 for i in range(21)]  # 0 to 10, step 0.5
-    values = []
-    for val in samples:
-        try:
-            v = eval_expr(expr, val)
-            if math.isfinite(v):
-                values.append(v)
-            else:
-                values.append(-float('inf'))
-        except Exception:
-            values.append(-float('inf'))
-    return sum(values)  # Higher is better
+def expr_to_str(expr):
+    if isinstance(expr, tuple):
+        op, left, right = expr
+        return f"({expr_to_str(left)} {op} {expr_to_str(right)})"
+    else:
+        return str(expr)
 
-# Mutation: randomly change part of expression
+# --------------------------
+# Fitness: maximize game score
+# --------------------------
+def fitness(expr):
+    # Game: input is dice roll [1..10]
+    # Expression must produce a score, capped at non-negative values
+    rolls = np.arange(1, 11)
+    total_score = 0
+    for r in rolls:
+        try:
+            val = eval_expr(expr, r)
+            if not math.isfinite(val):
+                val = -100
+        except Exception:
+            val = -100
+        # Game scoring rule: if val > r, earn r points, else val points
+        score = r if val > r else val
+        if score < 0:
+            score = 0
+        total_score += score
+    return total_score  # maximize this
+
+# --------------------------
+# Genetic Operators
+# --------------------------
 def mutate(expr, prob=0.1):
     if random.random() < prob:
         return generate_expr()
@@ -58,7 +78,6 @@ def mutate(expr, prob=0.1):
     else:
         return expr
 
-# Crossover: swap subtrees between two parents
 def crossover(expr1, expr2, prob=0.7):
     if random.random() > prob:
         return expr1
@@ -72,18 +91,11 @@ def crossover(expr1, expr2, prob=0.7):
         else:
             return (op1, left1, crossover(right1, right2, prob))
 
-# Convert expression to string
-def expr_to_str(expr):
-    if isinstance(expr, tuple):
-        op, left, right = expr
-        return f"({expr_to_str(left)} {op} {expr_to_str(right)})"
-    else:
-        return str(expr)
-
+# --------------------------
 # Gene Expression Algorithm
+# --------------------------
 def GeneExpressionAlgorithm(pop_size=50, generations=30, crossover_rate=0.7, mutation_rate=0.2):
     population = [generate_expr() for _ in range(pop_size)]
-
     best_expr = None
     best_fit = -float('inf')
 
@@ -111,11 +123,13 @@ def GeneExpressionAlgorithm(pop_size=50, generations=30, crossover_rate=0.7, mut
             new_population.append(child)
 
         population = new_population
-        print(f"Generation {gen+1}: Best fitness = {best_fit}")
+        print(f"Generation {gen+1}: Best fitness = {best_fit}, Expr = {expr_to_str(best_expr)}")
 
-    print("\nBest expression found:", expr_to_str(best_expr))
-    print("Best fitness:", best_fit)
+    print("\n🎮 Best expression found:", expr_to_str(best_expr))
+    print("🏆 Best fitness (Total Score):", best_fit)
 
-# Run algorithm
+# --------------------------
+# Run Algorithm
+# --------------------------
 if __name__ == "__main__":
-    GeneExpressionAlgorithm()
+    GeneExpressionAlgorithm(generations=40)
