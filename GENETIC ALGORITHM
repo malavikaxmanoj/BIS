@@ -1,85 +1,103 @@
 import numpy as np
-from sklearn.datasets import make_classification
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import pairwise_distances
 
-# Dataset
-X, y = make_classification(n_samples=500, n_features=10, n_informative=8, n_classes=2)
-X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2)
+# ---------------------------
+# Step 1: Create delivery locations
+# ---------------------------
+np.random.seed(42)
+n_locations = 15   # number of delivery points
+locations = np.random.rand(n_locations, 2) * 100  # random (x,y) coordinates
 
-# NN structure
-input_size = X.shape[1]
-hidden_size = 5
-output_size = 1
+# Compute distance matrix
+dist_matrix = pairwise_distances(locations, metric='euclidean')
 
-def sigmoid(x):
-    return 1 / (1 + np.exp(-x))
+def route_distance(route):
+    """Calculate total distance of a route (round trip)."""
+    dist = 0
+    for i in range(len(route) - 1):
+        dist += dist_matrix[route[i], route[i+1]]
+    dist += dist_matrix[route[-1], route[0]]  # return to start (depot)
+    return dist
 
-def forward_pass(X, w1, w2):
-    hidden = sigmoid(np.dot(X, w1))
-    output = sigmoid(np.dot(hidden, w2))
-    return output
+def compute_fitness(route):
+    """Fitness = inverse of distance (higher is better)."""
+    return 1 / route_distance(route)
 
-def compute_fitness(weights):
-    preds = forward_pass(X_train, weights['w1'], weights['w2'])
-    preds = (preds > 0.5).astype(int)
-    return accuracy_score(y_train, preds)
 
-# GA params
-population_size = 20  # Must be >= 4 (for your 4 seeded)
-generations = 50
-mutation_rate = 0.1
+# ---------------------------
+# Step 2: GA parameters
+# ---------------------------
+population_size = 30
+generations = 100
+mutation_rate = 0.2
 
-# Seeds for initial 4 individuals
-seeds = [12, 25, 5, 19]
+# Generate random routes (permutations of locations)
+population = [np.random.permutation(n_locations) for _ in range(population_size)]
 
-# Initialize population
-population = []
-for seed in seeds:
-    np.random.seed(seed)
-    population.append({
-        'w1': np.random.randn(input_size, hidden_size),
-        'w2': np.random.randn(hidden_size, output_size)
-    })
 
-# Fill rest randomly
-np.random.seed(None)
-for _ in range(population_size - len(seeds)):
-    population.append({
-        'w1': np.random.randn(input_size, hidden_size),
-        'w2': np.random.randn(hidden_size, output_size)
-    })
+# ---------------------------
+# Step 3: GA operators
+# ---------------------------
+def crossover(parent1, parent2):
+    """Order Crossover (OX)."""
+    size = len(parent1)
+    a, b = sorted(np.random.choice(range(size), 2, replace=False))
+    child = [-1] * size
+    # Copy slice from parent1
+    child[a:b] = parent1[a:b]
+    # Fill remaining from parent2
+    fill = [x for x in parent2 if x not in child]
+    pos = 0
+    for i in range(size):
+        if child[i] == -1:
+            child[i] = fill[pos]
+            pos += 1
+    return np.array(child)
 
-# GA loop
+def mutate(route):
+    """Swap two cities."""
+    route = route.copy()
+    a, b = np.random.choice(len(route), 2, replace=False)
+    route[a], route[b] = route[b], route[a]
+    return route
+
+
+# ---------------------------
+# Step 4: GA main loop
+# ---------------------------
 for gen in range(generations):
-    fitness_scores = np.array([compute_fitness(ind) for ind in population])
+    fitness_scores = np.array([compute_fitness(r) for r in population])
     best_fitness = np.max(fitness_scores)
     avg_fitness = np.mean(fitness_scores)
 
-    # Select top half
+    # Elitism: keep best half
     sorted_idx = np.argsort(fitness_scores)[::-1]
-    population = [population[i] for i in sorted_idx[:population_size//2]]
+    population = [population[i] for i in sorted_idx[:population_size // 2]]
 
-    # Create new population with crossover + mutation
+    # Generate new population
     new_population = []
     while len(new_population) < population_size:
         parents = np.random.choice(population, 2, replace=False)
-        child = {
-            'w1': (parents[0]['w1'] + parents[1]['w1']) / 2,
-            'w2': (parents[0]['w2'] + parents[1]['w2']) / 2,
-        }
+        child = crossover(parents[0], parents[1])
         if np.random.rand() < mutation_rate:
-            child['w1'] += np.random.randn(*child['w1'].shape) * 0.1
-            child['w2'] += np.random.randn(*child['w2'].shape) * 0.1
+            child = mutate(child)
         new_population.append(child)
 
     population = new_population
-    print(f"Generation {gen+1}, Best Fitness: {best_fitness:.4f}, Average Fitness: {avg_fitness:.4f}")
+    print(f"Gen {gen+1}, Best dist: {1/best_fitness:.2f}, Avg dist: {1/avg_fitness:.2f}")
 
-# Final evaluation on validation set
-fitness_scores = np.array([compute_fitness(ind) for ind in population])
-best_individual = population[np.argmax(fitness_scores)]
-preds = forward_pass(X_val, best_individual['w1'], best_individual['w2'])
-preds = (preds > 0.5).astype(int)
-final_acc = accuracy_score(y_val, preds)
-print(f"Final Accuracy on Validation Set: {final_acc:.4f}")
+
+# ---------------------------
+# Step 5: Final best route
+# ---------------------------
+fitness_scores = np.array([compute_fitness(r) for r in population])
+best_route = population[np.argmax(fitness_scores)]
+
+print("\nOptimal Delivery Route (indexes):", best_route)
+print("Total Distance:", route_distance(best_route))
+
+# Optional: Show coordinates in best visiting order
+print("\nRoute Coordinates:")
+for idx in best_route:
+    print(locations[idx])
+
