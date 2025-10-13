@@ -1,0 +1,84 @@
+import numpy as np
+import matplotlib.pyplot as plt
+from collections import deque
+
+# Define the grid size
+size = 10
+
+# Define grid: 0 = free, 1 = obstacle
+grid = np.zeros((size, size), dtype=int)
+
+# Add some obstacles
+grid[3, 1:7] = 1
+grid[6, 3:9] = 1
+grid[1:5, 8] = 1
+
+start = (0, 0)
+goal = (9, 9)
+
+def neighbors(pos):
+    x, y = pos
+    for nx, ny in [(x-1, y), (x+1, y), (x, y-1), (x, y+1)]:
+        if 0 <= nx < size and 0 <= ny < size:
+            yield (nx, ny)
+
+def wavefront(grid, start, goal):
+    dist = np.full(grid.shape, -1)  # Distance grid initialized to -1
+    dist[goal] = 0
+    queue = deque([goal])
+    
+    while queue:
+        current = queue.popleft()
+        for n in neighbors(current):
+            if grid[n] == 0 and dist[n] == -1:
+                dist[n] = dist[current] + 1
+                queue.append(n)
+    return dist
+
+def find_path(dist, start, goal):
+    if dist[start] == -1:
+        return None  # no path
+    
+    path = [start]
+    current = start
+    while current != goal:
+        # pick neighbor with smallest distance
+        current = min(neighbors(current), key=lambda x: dist[x] if dist[x] != -1 else 1e9)
+        if dist[current] == -1:
+            return None  # no path
+        path.append(current)
+    return path
+
+def fitness(path):
+    if path is None:
+        return 0
+    return 1 / len(path)  # inverse of path length
+
+# Run wavefront algorithm
+dist = wavefront(grid, start, goal)
+
+# Find shortest path
+path = find_path(dist, start, goal)
+
+# Calculate fitness
+fit = fitness(path)
+
+# Print results
+print("Grid (0=free, 1=obstacle):")
+print(grid)
+print("\nDistance map:")
+print(dist)
+print("\nPath from start to goal:")
+print(path)
+print(f"\nFitness (1 / path length): {fit:.3f}")
+
+# Visualize
+plt.imshow(grid, cmap='gray_r')
+if path:
+    px, py = zip(*path)
+    plt.plot(py, px, 'ro-')  # path in red dots/line
+plt.scatter(start[1], start[0], marker='o', color='green', label='Start')
+plt.scatter(goal[1], goal[0], marker='x', color='blue', label='Goal')
+plt.legend()
+plt.title("Robot Routing with Fitness")
+plt.show()
