@@ -1,76 +1,96 @@
-import random
-import math
+import numpy as np
+import matplotlib.pyplot as plt
 
-# Distance between cities
-def euclidean_distance(a, b):
-    return math.sqrt((a[0] - b[0])**2 + (a[1] - b[1])**2)
-
-# Total distance of a route
-def route_length(route, cities):
-    distance = 0
-    for i in range(len(route)):
-        city_a = cities[route[i]]
-        city_b = cities[route[(i + 1) % len(route)]]  # wrap around
-        distance += euclidean_distance(city_a, city_b)
-    return distance
-
-# Decode particle position into a route
-def decode_route(position):
-    return sorted(range(len(position)), key=lambda k: position[k])
-
-# Particle class
-class Particle:
-    def __init__(self, num_cities):
-        self.position = [random.random() for _ in range(num_cities)]
-        self.velocity = [random.uniform(-1, 1) for _ in range(num_cities)]
-        self.best_position = list(self.position)
-        self.best_value = float('inf')
-
-    def update(self, global_best_position, w=0.5, c1=1.5, c2=1.5):
-        for i in range(len(self.position)):
-            r1, r2 = random.random(), random.random()
-            cognitive = c1 * r1 * (self.best_position[i] - self.position[i])
-            social = c2 * r2 * (global_best_position[i] - self.position[i])
-            self.velocity[i] = w * self.velocity[i] + cognitive + social
-            self.position[i] += self.velocity[i]
-
-# PSO Algorithm
-def pso_tsp(cities, num_particles=30, max_iterations=100):
-    num_cities = len(cities)
-    swarm = [Particle(num_cities) for _ in range(num_particles)]
-
-    # Initialize global best
-    global_best_position = list(swarm[0].position)
-    global_best_value = float('inf')
-
-    for iteration in range(max_iterations):
-        for particle in swarm:
-            route = decode_route(particle.position)
-            value = route_length(route, cities)
-
-            if value < particle.best_value:
-                particle.best_value = value
-                particle.best_position = list(particle.position)
-
-            if value < global_best_value:
-                global_best_value = value
-                global_best_position = list(particle.position)
-
-        for particle in swarm:
-            particle.update(global_best_position)
-
-        print(f"Iteration {iteration+1}/{max_iterations} | Best Distance: {global_best_value:.4f}")
-
-    best_route = decode_route(global_best_position)
-    return best_route, global_best_value
-
-# Example: 6 cities (x, y coordinates)
-cities = [
-    (0, 0), (1, 5), (5, 2),
-    (6, 6), (8, 3), (2, 7)
+# --- Problem setup ---
+start = np.array([0, 0])
+goal = np.array([10, 10])
+obstacles = [
+    {"center": np.array([5, 5]), "radius": 2},
+    {"center": np.array([7, 2]), "radius": 1.5}
 ]
 
-best_route, best_distance = pso_tsp(cities)
+n_waypoints = 5  # number of intermediate points
+n_particles = 50
+max_iters = 100
 
-print("\nFinal Best Route (city indices):", best_route)
-print("Best Distance:", round(best_distance, 4))
+# --- Helper functions ---
+def path_length(points):
+    total = 0
+    for i in range(len(points) - 1):
+        total += np.linalg.norm(points[i+1] - points[i])
+    return total
+
+def collision_penalty(points):
+    penalty = 0
+    for obs in obstacles:
+        for p in points:
+            dist = np.linalg.norm(p - obs["center"])
+            if dist < obs["radius"]:
+                penalty += 1000 * (obs["radius"] - dist)  # penalize heavily
+    return penalty
+
+def fitness(path_points):
+    pts = np.vstack([start, path_points, goal])
+    return path_length(pts) + collision_penalty(pts)
+
+# --- PSO Parameters ---
+w = 0.7        # inertia
+c1 = 1.5       # cognitive weight
+c2 = 1.5       # social weight
+
+# --- Initialization ---
+positions = np.random.uniform(0, 10, (n_particles, n_waypoints, 2))
+velocities = np.random.uniform(-1, 1, (n_particles, n_waypoints, 2))
+pbest_positions = positions.copy()
+pbest_scores = np.array([fitness(p) for p in positions])
+gbest_index = np.argmin(pbest_scores)
+gbest_position = pbest_positions[gbest_index].copy()
+
+# --- PSO loop ---
+for iter in range(max_iters):
+    for i in range(n_particles):
+        # Update velocity
+        r1, r2 = np.random.rand(), np.random.rand()
+        velocities[i] = (
+            w * velocities[i] +
+            c1 * r1 * (pbest_positions[i] - positions[i]) +
+            c2 * r2 * (gbest_position - positions[i])
+        )
+        # Update position
+        positions[i] += velocities[i]
+        positions[i] = np.clip(positions[i], 0, 10)  # keep within map bounds
+
+        # Evaluate fitness
+        score = fitness(positions[i])
+        if score < pbest_scores[i]:
+            pbest_scores[i] = score
+            pbest_positions[i] = positions[i].copy()
+
+    # Update global best
+    gbest_index = np.argmin(pbest_scores)
+    gbest_position = pbest_positions[gbest_index].copy()
+
+    if iter % 10 == 0:
+        print(f"Iteration {iter}: Best Distance = {pbest_scores[gbest_index]:.2f}")
+
+# --- Results ---
+print("\nOptimized Path Length:", pbest_scores[gbest_index])
+
+# --- Visualization ---
+best_path = np.vstack([start, gbest_position, goal])
+plt.figure(figsize=(6,6))
+plt.plot(best_path[:,0], best_path[:,1], 'b-o', label='Optimized Path')
+plt.scatter(start[0], start[1], color='green', s=100, label='Start')
+plt.scatter(goal[0], goal[1], color='red', s=100, label='Goal')
+
+# Draw obstacles
+for obs in obstacles:
+    circle = plt.Circle(obs["center"], obs["radius"], color='r', alpha=0.3)
+    plt.gca().add_patch(circle)
+
+plt.title("Drone Path Optimization using PSO")
+plt.xlim(-1, 11)
+plt.ylim(-1, 11)
+plt.legend()
+plt.grid(True)
+plt.show()
