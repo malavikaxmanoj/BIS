@@ -1,103 +1,52 @@
+import random
 import numpy as np
-from sklearn.metrics import pairwise_distances
 
-# ---------------------------
-# Step 1: Create delivery locations
-# ---------------------------
-np.random.seed(42)
-n_locations = 15   # number of delivery points
-locations = np.random.rand(n_locations, 2) * 100  # random (x,y) coordinates
+# Example distance matrix
+distance_matrix = [
+    [0, 10, 15, 20],
+    [10, 0, 35, 25],
+    [15, 35, 0, 30],
+    [20, 25, 30, 0]
+]
 
-# Compute distance matrix
-dist_matrix = pairwise_distances(locations, metric='euclidean')
+num_locations = len(distance_matrix)
 
 def route_distance(route):
-    """Calculate total distance of a route (round trip)."""
-    dist = 0
-    for i in range(len(route) - 1):
-        dist += dist_matrix[route[i], route[i+1]]
-    dist += dist_matrix[route[-1], route[0]]  # return to start (depot)
-    return dist
+    return sum(distance_matrix[route[i]][route[i+1]] for i in range(len(route)-1))
 
-def compute_fitness(route):
-    """Fitness = inverse of distance (higher is better)."""
+def fitness(route):
     return 1 / route_distance(route)
 
-
-# ---------------------------
-# Step 2: GA parameters
-# ---------------------------
-population_size = 30
-generations = 100
-mutation_rate = 0.2
-
-# Generate random routes (permutations of locations)
-population = [np.random.permutation(n_locations) for _ in range(population_size)]
-
-
-# ---------------------------
-# Step 3: GA operators
-# ---------------------------
-def crossover(parent1, parent2):
-    """Order Crossover (OX)."""
-    size = len(parent1)
-    a, b = sorted(np.random.choice(range(size), 2, replace=False))
-    child = [-1] * size
-    # Copy slice from parent1
-    child[a:b] = parent1[a:b]
-    # Fill remaining from parent2
-    fill = [x for x in parent2 if x not in child]
-    pos = 0
-    for i in range(size):
-        if child[i] == -1:
-            child[i] = fill[pos]
+def crossover(p1, p2):
+    start, end = sorted(random.sample(range(len(p1)), 2))
+    child = [None]*len(p1)
+    child[start:end] = p1[start:end]
+    pos = end
+    for x in p2:
+        if x not in child:
+            if pos >= len(p1): pos = 0
+            child[pos] = x
             pos += 1
-    return np.array(child)
+    return child
 
 def mutate(route):
-    """Swap two cities."""
-    route = route.copy()
-    a, b = np.random.choice(len(route), 2, replace=False)
-    route[a], route[b] = route[b], route[a]
+    i, j = random.sample(range(len(route)), 2)
+    route[i], route[j] = route[j], route[i]
     return route
 
+# Initialize population
+population = [random.sample(range(num_locations), num_locations) for _ in range(50)]
 
-# ---------------------------
-# Step 4: GA main loop
-# ---------------------------
-for gen in range(generations):
-    fitness_scores = np.array([compute_fitness(r) for r in population])
-    best_fitness = np.max(fitness_scores)
-    avg_fitness = np.mean(fitness_scores)
-
-    # Elitism: keep best half
-    sorted_idx = np.argsort(fitness_scores)[::-1]
-    population = [population[i] for i in sorted_idx[:population_size // 2]]
-
-    # Generate new population
-    new_population = []
-    while len(new_population) < population_size:
-        parents = np.random.choice(population, 2, replace=False)
-        child = crossover(parents[0], parents[1])
-        if np.random.rand() < mutation_rate:
+for generation in range(500):
+    population = sorted(population, key=route_distance)
+    new_population = population[:5]  # elitism
+    while len(new_population) < 50:
+        parents = random.sample(population[:25], 2)
+        child = crossover(*parents)
+        if random.random() < 0.1:
             child = mutate(child)
         new_population.append(child)
-
     population = new_population
-    print(f"Gen {gen+1}, Best dist: {1/best_fitness:.2f}, Avg dist: {1/avg_fitness:.2f}")
 
-
-# ---------------------------
-# Step 5: Final best route
-# ---------------------------
-fitness_scores = np.array([compute_fitness(r) for r in population])
-best_route = population[np.argmax(fitness_scores)]
-
-print("\nOptimal Delivery Route (indexes):", best_route)
-print("Total Distance:", route_distance(best_route))
-
-# Optional: Show coordinates in best visiting order
-print("\nRoute Coordinates:")
-for idx in best_route:
-    print(locations[idx])
-
+best_route = min(population, key=route_distance)
+print("Best route:", best_route, "Distance:", route_distance(best_route))
