@@ -1,135 +1,62 @@
-import random
-import math
-import operator
 import numpy as np
+import pandas as pd
+from gplearn.genetic import SymbolicRegressor
+from gplearn.functions import make_function
 
-# --------------------------
-# Operators and Terminals
-# --------------------------
-OPERATORS = {
-    '+': operator.add,
-    '-': operator.sub,
-    '*': operator.mul,
-    '/': lambda x, y: x / y if y != 0 else 1  # safe division
-}
-TERMINALS = ['x', 1.0, 2.0, 3.0, 5.0, 7.0]
+# --- Step 1: Create synthetic dataset ---
+np.random.seed(42)
+n_samples = 200
 
-MAX_DEPTH = 4
+kills = np.random.randint(0, 10, n_samples)
+time_survived = np.random.uniform(1, 20, n_samples)
+items = np.random.randint(0, 6, n_samples)
+damage = np.random.uniform(5, 50, n_samples)
+skill_efficiency = np.random.uniform(0.5, 1.0, n_samples)
 
-# --------------------------
-# Expression Tree Functions
-# --------------------------
-def generate_expr(depth=0):
-    if depth >= MAX_DEPTH or (depth > 0 and random.random() < 0.3):
-        return random.choice(TERMINALS)
-    else:
-        op = random.choice(list(OPERATORS.keys()))
-        left = generate_expr(depth + 1)
-        right = generate_expr(depth + 1)
-        return (op, left, right)
+# True (hidden) relationship (for testing)
+score = (10 * kills + 5 * items + 2 * time_survived - 0.5 * damage) * skill_efficiency + np.random.normal(0, 5, n_samples)
 
-def eval_expr(expr, x):
-    if isinstance(expr, tuple):
-        op, left, right = expr
-        return OPERATORS[op](eval_expr(left, x), eval_expr(right, x))
-    elif expr == 'x':
-        return x
-    else:
-        return expr
+data = pd.DataFrame({
+    "kills": kills,
+    "time_survived": time_survived,
+    "items": items,
+    "damage": damage,
+    "skill_efficiency": skill_efficiency,
+    "score": score
+})
 
-def expr_to_str(expr):
-    if isinstance(expr, tuple):
-        op, left, right = expr
-        return f"({expr_to_str(left)} {op} {expr_to_str(right)})"
-    else:
-        return str(expr)
+# --- Step 2: Prepare data ---
+X = data[["kills", "time_survived", "items", "damage", "skill_efficiency"]]
+y = data["score"]
 
-# --------------------------
-# Fitness: maximize game score
-# --------------------------
-def fitness(expr):
-    # Game: input is dice roll [1..10]
-    # Expression must produce a score, capped at non-negative values
-    rolls = np.arange(1, 11)
-    total_score = 0
-    for r in rolls:
-        try:
-            val = eval_expr(expr, r)
-            if not math.isfinite(val):
-                val = -100
-        except Exception:
-            val = -100
-        # Game scoring rule: if val > r, earn r points, else val points
-        score = r if val > r else val
-        if score < 0:
-            score = 0
-        total_score += score
-    return total_score  # maximize this
+# --- Step 3: Define the Gene Expression model ---
+est_gp = SymbolicRegressor(
+    population_size=2000,
+    generations=30,
+    stopping_criteria=0.01,
+    p_crossover=0.7,
+    p_subtree_mutation=0.1,
+    p_hoist_mutation=0.05,
+    p_point_mutation=0.1,
+    max_samples=0.9,
+    verbose=1,
+    parsimony_coefficient=0.001,
+    random_state=42,
+    function_set=['add', 'sub', 'mul', 'div', 'sqrt', 'log', 'sin', 'cos']
+)
 
-# --------------------------
-# Genetic Operators
-# --------------------------
-def mutate(expr, prob=0.1):
-    if random.random() < prob:
-        return generate_expr()
-    elif isinstance(expr, tuple):
-        op, left, right = expr
-        return (op, mutate(left, prob), mutate(right, prob))
-    else:
-        return expr
+# --- Step 4: Train model ---
+est_gp.fit(X, y)
 
-def crossover(expr1, expr2, prob=0.7):
-    if random.random() > prob:
-        return expr1
-    if not isinstance(expr1, tuple) or not isinstance(expr2, tuple):
-        return expr2
-    else:
-        op1, left1, right1 = expr1
-        op2, left2, right2 = expr2
-        if random.random() < 0.5:
-            return (op1, crossover(left1, left2, prob), right1)
-        else:
-            return (op1, left1, crossover(right1, right2, prob))
+# --- Step 5: Evaluate ---
+preds = est_gp.predict(X)
+mse = np.mean((preds - y)**2)
+print(f"\nMean Squared Error: {mse:.2f}")
+print("\nEvolved Expression:\n", est_gp._program)
 
-# --------------------------
-# Gene Expression Algorithm
-# --------------------------
-def GeneExpressionAlgorithm(pop_size=50, generations=30, crossover_rate=0.7, mutation_rate=0.2):
-    population = [generate_expr() for _ in range(pop_size)]
-    best_expr = None
-    best_fit = -float('inf')
-
-    for gen in range(generations):
-        fitnesses = [fitness(ind) for ind in population]
-
-        # Track best
-        for ind_fit, ind in zip(fitnesses, population):
-            if ind_fit > best_fit:
-                best_fit = ind_fit
-                best_expr = ind
-
-        new_population = []
-        while len(new_population) < pop_size:
-            # Tournament selection
-            def tournament_select():
-                a, b = random.sample(population, 2)
-                return a if fitness(a) > fitness(b) else b
-
-            parent1 = tournament_select()
-            parent2 = tournament_select()
-
-            child = crossover(parent1, parent2, crossover_rate)
-            child = mutate(child, mutation_rate)
-            new_population.append(child)
-
-        population = new_population
-        print(f"Generation {gen+1}: Best fitness = {best_fit}, Expr = {expr_to_str(best_expr)}")
-
-    print("\n🎮 Best expression found:", expr_to_str(best_expr))
-    print("🏆 Best fitness (Total Score):", best_fit)
-
-# --------------------------
-# Run Algorithm
-# --------------------------
-if __name__ == "__main__":
-    GeneExpressionAlgorithm(generations=40)
+# --- Step 6: Maximization ---
+# Find input values that maximize predicted score
+sample_inputs = X.sample(5)
+sample_inputs["predicted_score"] = est_gp.predict(sample_inputs)
+print("\nSample Predictions for Best Game Scores:")
+print(sample_inputs.sort_values(by="predicted_score", ascending=False))
