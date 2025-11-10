@@ -1,0 +1,142 @@
+import numpy as np
+import random
+
+# --- Parameters ---
+GRID_SIZE = (10, 10)
+START = (0, 0)
+GOAL = (9, 9)
+POP_SIZE = 100
+CHROMOSOME_LENGTH = 40
+MUTATION_RATE = 0.1
+GENERATIONS = 200
+
+# --- Environment ---
+grid = np.zeros(GRID_SIZE, dtype=int)
+# Add some obstacles
+obstacles = [(3, i) for i in range(1, 8)] + [(6, i) for i in range(2, 10)]
+for x, y in obstacles:
+    grid[x, y] = 1
+
+# --- Helper functions ---
+moves = ['U', 'D', 'L', 'R']
+
+def move(position, direction):
+    x, y = position
+    if direction == 'U': x -= 1
+    elif direction == 'D': x += 1
+    elif direction == 'L': y -= 1
+    elif direction == 'R': y += 1
+    # Stay within bounds
+    x = max(0, min(GRID_SIZE[0]-1, x))
+    y = max(0, min(GRID_SIZE[1]-1, y))
+    return (x, y)
+
+def fitness(chromosome):
+    pos = START
+    penalty = 0
+    for m in chromosome:
+        new_pos = move(pos, m)
+        if grid[new_pos] == 1:  # hit obstacle
+            penalty += 5
+        pos = new_pos
+    dist_to_goal = np.linalg.norm(np.array(pos) - np.array(GOAL))
+    # Lower distance & penalty → higher fitness
+    return 1 / (1 + dist_to_goal + penalty)
+
+def select(population, fitnesses):
+    total_fit = sum(fitnesses)
+    pick = random.uniform(0, total_fit)
+    current = 0
+    for chrom, fit in zip(population, fitnesses):
+        current += fit
+        if current > pick:
+            return chrom
+
+def crossover(parent1, parent2):
+    point = random.randint(1, CHROMOSOME_LENGTH-2)
+    child = parent1[:point] + parent2[point:]
+    return child
+
+def mutate(chromosome):
+    new_chrom = []
+    for gene in chromosome:
+        if random.random() < MUTATION_RATE:
+            new_chrom.append(random.choice(moves))
+        else:
+            new_chrom.append(gene)
+    return new_chrom
+
+# --- Initialize population ---
+population = [[random.choice(moves) for _ in range(CHROMOSOME_LENGTH)] for _ in range(POP_SIZE)]
+
+# --- Evolution loop ---
+best_path = None
+best_fitness = 0
+
+for gen in range(GENERATIONS):
+    fitnesses = [fitness(ch) for ch in population]
+    gen_best = max(fitnesses)
+    if gen_best > best_fitness:
+        best_fitness = gen_best
+        best_path = population[fitnesses.index(gen_best)]
+    new_population = []
+    for _ in range(POP_SIZE):
+        p1 = select(population, fitnesses)
+        p2 = select(population, fitnesses)
+        child = crossover(p1, p2)
+        child = mutate(child)
+        new_population.append(child)
+    population = new_population
+    if gen % 20 == 0:
+        print(f"Generation {gen}, Best fitness: {best_fitness:.4f}")
+
+# --- Result ---
+print("\nBest path found (fitness = {:.4f}):".format(best_fitness))
+print("".join(best_path))
+
+# --- Optional: visualize path ---
+path_positions = [START]
+pos = START
+for m in best_path:
+    pos = move(pos, m)
+    if grid[pos] == 1:
+        break
+    path_positions.append(pos)
+
+env_display = np.copy(grid).astype(str)
+env_display[env_display == '1'] = '█'
+env_display[env_display == '0'] = '.'
+for x, y in path_positions:
+    env_display[x, y] = '*'
+env_display[START] = 'S'
+env_display[GOAL] = 'G'
+
+print("\n".join(" ".join(row) for row in env_display))
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+output
+Generation 0, Best fitness: 0.1208
+Generation 20, Best fitness: 0.2000
+Generation 40, Best fitness: 0.2000
+Generation 60, Best fitness: 0.2000
+Generation 80, Best fitness: 0.2000
+Generation 100, Best fitness: 0.2000
+Generation 120, Best fitness: 0.2000
+Generation 140, Best fitness: 0.2000
+Generation 160, Best fitness: 0.2000
+Generation 180, Best fitness: 0.2000
+
+Best path found (fitness = 0.2000):
+LDUUDRDURRLRLRRLUURLRURDLRDRRRDRRLRDRRRD
+
+Grid visualization (S=start, G=goal, *=path, █=obstacle):
+S . . * * * . . . .
+* * * * * * . . . .
+. * . . . * * * * .
+. █ █ █ █ █ █ █ * *
+. . . . . . . . . *
+. . . . . . . . . *
+. . █ █ █ █ █ █ █ █
+. . . . . . . . . .
+. . . . . . . . . .
+. . . . . . . . . G
